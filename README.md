@@ -1,203 +1,51 @@
 # Social Media Automation
 
-Post to **Instagram, Facebook, Mastodon, and LinkedIn** from a single Excel spreadsheet. Schedule posts, attach images, and optionally rewrite content with AI before publishing.
+Post to **Instagram, Facebook, Mastodon, and LinkedIn** from a single dashboard. Create posts with images or videos, schedule them, and publish to multiple platforms at once.
+
+## Two Interfaces
+
+### Web App (Recommended)
+
+A Next.js full-stack web app with a form-based UI for managing and publishing posts.
+
+**Features:**
+- Create posts with rich text editor, images, and videos
+- Publish to multiple platforms simultaneously
+- Schedule posts with automatic cron-based publishing
+- Connect/disconnect social media accounts from Settings
+- Extend Facebook/Instagram tokens to long-lived from the UI
+- Password-gated access (single user)
+- Auto-refreshing dashboard
+- Vercel deployment ready
+
+### Python CLI (Legacy)
+
+A command-line tool that reads posts from an Excel spreadsheet and publishes them.
 
 ---
 
-## How It Works
-
-1. Fill in `posts_template.xlsx` with your posts
-2. Set `Ready = YES` on rows you want to publish
-3. Run the tool — it reads the spreadsheet and posts to the platforms you choose
-4. Posted rows are automatically marked as `Posted = YES` so they don't get sent twice
-
----
-
-## Quick Start
+## Web App Setup
 
 ### 1. Install dependencies
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -e ".[dev]"
+cd web
+npm install
 ```
 
-### 2. Set up your credentials
+### 2. Configure credentials
 
 ```bash
-cp .env.example .env
-# Open .env and fill in your tokens (see Platform Setup below)
+cp .env.local.example .env.local
 ```
 
-### 3. Fill in the spreadsheet
-
-Open `posts_template.xlsx` and add your posts (see Spreadsheet Guide below).
-
-### 4. Post
-
-```bash
-# Preview what will be posted (no actual posting)
-python -m src.main preview
-
-# Post to all platforms
-python -m src.main post
-
-# Post to specific platforms only
-python -m src.main post --platforms instagram facebook
-
-# Run as a continuous scheduler (checks every 30 seconds)
-python -m src.main schedule
-```
-
----
-
-## Spreadsheet Guide
-
-Open `posts_template.xlsx`. Each row is one post.
-
-| Column | Required | Description |
-|---|---|---|
-| **Title** | Yes | Short headline for the post |
-| **Content** | Yes | The main body text |
-| **Image** | No | A publicly accessible image URL. For multiple images (carousel), separate with commas |
-| **Scheduled At** | No | When to publish: `YYYY-MM-DD HH:MM`. Leave blank to post immediately |
-| **Ready** | Yes | Set to `YES` to publish. Anything else (blank, `NO`, `DRAFT`) is skipped |
-| **Platform** | No | Target a specific platform (`instagram`, `facebook`, `mastodon`, `linkedin`). Leave blank to post to all |
-| **Posted** | Auto | Automatically set to `YES` after successful posting. Do not edit manually |
-
-### Example rows
-
-| Title | Content | Image | Scheduled At | Ready | Platform | Posted |
-|---|---|---|---|---|---|---|
-| Product Launch | We just launched our new product! Check it out. | https://example.com/image.jpg | 2026-03-10 09:00 | YES | instagram | |
-| Weekly Update | Here's what happened this week at the lab... | | | YES | | |
-| Draft Post | Work in progress... | | | NO | | |
-
-### Image requirements
-
-- Instagram and Facebook **require** a publicly accessible URL (no local file paths)
-- The URL must point directly to an image file (`.jpg`, `.png`, etc.) — redirecting URLs may not work
-- Free options for hosting images: [imgbb.com](https://imgbb.com), AWS S3, or any public CDN
-
----
-
-## Platform Setup
-
-### Instagram
-
-Instagram posting requires a **Business or Creator account** linked to a **Facebook Page**.
-
-1. Go to [developers.facebook.com](https://developers.facebook.com) → Create App → select **"Other"** type
-2. Add the **Instagram Graph API** use case
-3. Add these permissions: `instagram_basic`, `instagram_content_publish`, `instagram_manage_comments`, `pages_show_list`, `business_management`
-4. Go to **Tools → Graph API Explorer**
-5. Select your app, click **Generate Access Token**, and select your Facebook Page when prompted
-6. Run this query to get your Instagram Account ID:
-   ```
-   GET /me/accounts?fields=id,name,instagram_business_account
-   ```
-7. Copy the `instagram_business_account.id` value
-8. Add to `.env`:
-   ```
-   INSTAGRAM_ACCESS_TOKEN=your_token
-   INSTAGRAM_ACCOUNT_ID=your_instagram_business_account_id
-   ```
-
-> **Note:** The access token expires in ~60 days. Repeat step 5 to refresh it.
-
----
-
-### Facebook
-
-1. Use the same Facebook App created for Instagram above
-2. In Graph API Explorer, generate a token with `pages_manage_posts` and `pages_show_list` permissions
-3. From the `/me/accounts` response, copy your **Page ID**
-4. Add to `.env`:
-   ```
-   FACEBOOK_ACCESS_TOKEN=your_token
-   FACEBOOK_PAGE_ID=your_page_id
-   ```
-
----
-
-### Mastodon
-
-1. Log into your Mastodon instance (e.g. mastodon.social)
-2. Go to **Preferences → Development → New Application**
-3. Name it anything, grant `read write` scopes
-4. Copy the **Access Token**
-5. Add to `.env`:
-   ```
-   MASTODON_ACCESS_TOKEN=your_token
-   MASTODON_API_BASE_URL=https://mastodon.social   # replace with your instance URL
-   ```
-
----
-
-### LinkedIn
-
-LinkedIn requires OAuth2 and an approved app.
-
-1. Go to [linkedin.com/developers](https://www.linkedin.com/developers/) → Create App
-2. Under **Products**, request **"Share on LinkedIn"** (for personal posts) or **"Marketing Developer Platform"** (for org pages)
-3. Complete the OAuth2 flow to get an access token with `w_member_social` scope
-4. For org page posting, also get `w_organization_social` and your **Organization ID**
-5. Add to `.env`:
-   ```
-   LINKEDIN_ACCESS_TOKEN=your_token
-   LINKEDIN_ORGANIZATION_ID=your_org_id   # leave blank for personal profile posts
-   ```
-
-> **Note:** LinkedIn tokens expire in 60 days. You'll need to reauthenticate periodically.
-
----
-
-## AI Rewriting (Optional)
-
-The tool can rewrite your post content using OpenAI before publishing, tailoring the tone and format for each platform automatically.
-
-1. Add your OpenAI API key to `.env`:
-   ```
-   OPENAI_API_KEY=your_key
-   OPENAI_MODEL=gpt-4o
-   ```
-2. Use the `--rewrite` flag when posting:
-   ```bash
-   python -m src.main post --rewrite
-   ```
-3. Preview rewrites without posting:
-   ```bash
-   python -m src.main rewrite --platform instagram
-   ```
-
-**SFU CoPilot users:** Set `OPENAI_BASE_URL` to your CoPilot endpoint and use your CoPilot API key.
-
----
-
-## Scheduling
-
-### Continuous mode (runs forever)
-
-```bash
-python -m src.main schedule
-```
-
-Checks the spreadsheet every 30 seconds and posts rows when their `Scheduled At` time arrives.
-
-### Cron job (runs periodically)
-
-```cron
-*/30 * * * * cd /path/to/project && .venv/bin/python -m src.main post
-```
-
----
-
-## Environment Variables
-
-Copy `.env.example` to `.env` and fill in the values you need.
+Edit `.env.local` with your values:
 
 ```env
+# Login
+AUTH_USERNAME=admin
+AUTH_PASSWORD=your_password
+
 # Mastodon
 MASTODON_ACCESS_TOKEN=
 MASTODON_API_BASE_URL=https://mastodon.social
@@ -207,6 +55,8 @@ INSTAGRAM_ACCESS_TOKEN=
 INSTAGRAM_ACCOUNT_ID=
 
 # Facebook
+FACEBOOK_APP_ID=
+FACEBOOK_APP_SECRET=
 FACEBOOK_ACCESS_TOKEN=
 FACEBOOK_PAGE_ID=
 
@@ -214,32 +64,156 @@ FACEBOOK_PAGE_ID=
 LINKEDIN_ACCESS_TOKEN=
 LINKEDIN_ORGANIZATION_ID=
 
-# OpenAI (optional)
-OPENAI_API_KEY=
-OPENAI_MODEL=gpt-4o
-
-# Spreadsheet
-SPREADSHEET_PATH=posts_template.xlsx
+SESSION_SECRET=change-me-to-a-random-string-at-least-32-chars
 ```
+
+### 3. Run
+
+```bash
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000), log in, and start creating posts.
+
+### 4. Scheduled Posts
+
+Posts with a schedule time and "Ready" checked are auto-published by the cron endpoint.
+
+**Locally:** Visit `http://localhost:3000/api/cron` or set up a crontab:
+```bash
+*/5 * * * * curl -s http://localhost:3000/api/cron > /dev/null
+```
+
+**On Vercel:** Cron runs automatically every 5 minutes (configured in `vercel.json`).
+
+### 5. Token Management
+
+Facebook and Instagram tokens expire. To extend them:
+
+1. Paste a fresh token from Graph API Explorer into Settings
+2. Click **"Extend Token"** — Facebook becomes permanent, Instagram extends to 60 days
+
+Requires `FACEBOOK_APP_ID` and `FACEBOOK_APP_SECRET` in `.env.local`.
+
+### 6. Deploy to Vercel
+
+```bash
+cd web
+npx vercel
+```
+
+Set all environment variables in the Vercel dashboard.
+
+---
+
+## Python CLI Setup
+
+### 1. Install dependencies
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+### 2. Configure credentials
+
+```bash
+cp .env.example .env
+# Fill in your tokens
+```
+
+### 3. Run
+
+```bash
+# Preview what will be posted
+python -m src.main preview
+
+# Post to all platforms
+python -m src.main post
+
+# Post to specific platforms
+python -m src.main post --platforms instagram facebook
+
+# Continuous scheduler
+python -m src.main schedule
+```
+
+### Spreadsheet Guide
+
+Open `posts_template.xlsx`. Each row is one post.
+
+| Column | Required | Description |
+|---|---|---|
+| **Title** | Yes | Short headline |
+| **Content** | Yes | Main body text |
+| **Image** | No | Public image URL |
+| **Scheduled At** | No | `YYYY-MM-DD HH:MM` or blank for immediate |
+| **Ready** | Yes | `YES` to publish |
+| **Platform** | No | `instagram`, `facebook`, `mastodon`, `linkedin`, or blank for all |
+| **Posted** | Auto | Set automatically after posting |
+
+---
+
+## Platform Setup
+
+### Instagram
+
+Requires a **Business/Creator account** linked to a **Facebook Page**.
+
+1. [developers.facebook.com](https://developers.facebook.com) > Create App > "Other"
+2. Add Instagram Graph API, grant `instagram_basic`, `instagram_content_publish`
+3. Graph API Explorer > Generate User Access Token
+4. Get your account ID: `GET /me/accounts?fields=id,name,instagram_business_account`
+
+### Facebook
+
+1. Same app as Instagram
+2. Grant `pages_manage_posts`, `pages_show_list`
+3. Select "Get Page Access Token" in Graph API Explorer
+4. Copy your Page ID from `/me/accounts`
+
+### Mastodon
+
+1. Preferences > Development > New Application
+2. Grant `read write` scopes
+3. Copy the Access Token
+
+### LinkedIn
+
+1. [linkedin.com/developers](https://www.linkedin.com/developers/) > Create App
+2. Request "Share on LinkedIn" product
+3. Complete OAuth2 flow for `w_member_social` scope
+4. For org pages: also get `w_organization_social` and Organization ID
 
 ---
 
 ## Project Structure
 
 ```
-src/
-  main.py              CLI entrypoint
-  scheduler.py         Continuous scheduler loop
-  platforms/
-    mastodon.py        Mastodon poster
-    instagram.py       Instagram poster (Facebook Graph API)
-    facebook.py        Facebook Page poster
-    linkedin.py        LinkedIn poster
-  utils/
-    spreadsheet.py     Reads Excel/CSV → Post objects, marks posted rows
-    rewriter.py        OpenAI content rewriter
-scripts/
-  create_template.py   Generates posts_template.xlsx
-posts_template.xlsx    Your posts go here
-.env.example           Template for credentials
+web/                         Next.js web app
+  src/
+    app/
+      page.tsx               Dashboard (post list + form)
+      settings/page.tsx      Platform token management
+      login/page.tsx         Login page
+      api/
+        posts/               CRUD + publish endpoints
+        cron/                Scheduled post publisher
+        settings/            Settings + token extension
+        platforms/            Connected platform status
+    lib/
+      platforms/             Platform posting modules
+      posts.ts               Post CRUD (JSON file storage)
+      settings.ts            Settings management
+      auth.ts                Session auth
+    middleware.ts             Auth guard
+  data/                      Posts and settings (gitignored)
+  vercel.json                Vercel cron config
+
+src/                         Python CLI (legacy)
+  main.py                    CLI entrypoint
+  platforms/                 Platform posting modules
+  utils/                     Spreadsheet reader, AI rewriter
+posts_template.xlsx          Spreadsheet for CLI usage
 ```
