@@ -6,8 +6,13 @@ export async function GET() {
   if (!(await validateSession())) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  const posts = loadPosts();
-  return NextResponse.json(posts);
+  try {
+    const posts = await loadPosts();
+    return NextResponse.json(posts);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -15,10 +20,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const body = await req.json();
-  const post = addPost({
+  const post = await addPost({
     title: body.title || "",
     content: body.content || "",
-    image: body.image || "",
+    media: body.media || "",
     scheduledAt: body.scheduledAt || "",
     ready: body.ready ?? false,
     platforms: body.platforms || [],

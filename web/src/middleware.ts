@@ -25,7 +25,7 @@ export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   // Allow login page and login API
-  if (pathname === "/login" || pathname.startsWith("/api/auth")) {
+  if (pathname === "/login" || pathname.startsWith("/api/auth") || pathname.startsWith("/api/cron") || pathname.startsWith("/api/media")) {
     return NextResponse.next();
   }
 

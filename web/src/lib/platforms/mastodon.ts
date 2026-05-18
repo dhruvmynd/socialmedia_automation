@@ -31,21 +31,45 @@ async function uploadMedia(mediaUrl: string, baseUrl: string, accessToken: strin
   return data.id;
 }
 
-export async function postToMastodon(text: string, imageUrl?: string, videoUrl?: string): Promise<{ success: boolean; url?: string; error?: string }> {
+export async function postToMastodon(
+  text: string,
+  imageUrl?: string,
+  videoUrl?: string,
+  extraImages: string[] = []
+): Promise<{ success: boolean; url?: string; error?: string }> {
   const settings = loadSettings();
   const { accessToken, apiBaseUrl } = settings.mastodon;
   if (!accessToken) return { success: false, error: "Mastodon token not configured. Go to Settings to add it." };
 
   const body: Record<string, unknown> = { status: text };
+  const mediaIds: string[] = [];
 
-  const mediaUrl = videoUrl || imageUrl;
-  if (mediaUrl) {
-    const mediaId = await uploadMedia(mediaUrl, apiBaseUrl, accessToken, !!videoUrl);
-    if (mediaId) {
-      body.media_ids = [mediaId];
-    } else if (videoUrl) {
+  if (videoUrl) {
+    const id = await uploadMedia(videoUrl, apiBaseUrl, accessToken, true);
+    if (id) {
+      mediaIds.push(id);
+    } else {
       return { success: false, error: "Failed to upload video to Mastodon" };
     }
+  } else {
+    // Mastodon allows up to 4 attachments per status
+    const allImages = [
+      ...(imageUrl ? [imageUrl] : []),
+      ...extraImages.filter(Boolean),
+    ].slice(0, 4);
+
+    for (const url of allImages) {
+      const id = await uploadMedia(url, apiBaseUrl, accessToken, false);
+      if (id) mediaIds.push(id);
+    }
+
+    if (allImages.length > 0 && mediaIds.length === 0) {
+      return { success: false, error: "Failed to upload images to Mastodon" };
+    }
+  }
+
+  if (mediaIds.length > 0) {
+    body.media_ids = mediaIds;
   }
 
   const resp = await fetch(`${apiBaseUrl}/api/v1/statuses`, {
