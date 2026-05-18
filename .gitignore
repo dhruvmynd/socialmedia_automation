@@ -1,4 +1,11 @@
 .env
+# Google service account keys — NEVER commit
+pranaauth-*.json
+*-service-account*.json
+# Local media scratch files
+*.mp4
+# Claude Code local config
+.claude/
 __pycache__/
 *.pyc
 *.pyo

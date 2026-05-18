@@ -3,13 +3,13 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { FaMastodon, FaLinkedinIn, FaFacebookF, FaInstagram } from "react-icons/fa";
 
 interface Post {
   id: string;
   title: string;
   content: string;
-  image: string;
-  video: string;
+  media: string;
   scheduledAt: string;
   ready: boolean;
   platforms: string[];
@@ -25,6 +25,30 @@ interface Platform {
 }
 
 const ALL_PLATFORMS = ["mastodon", "linkedin", "facebook", "instagram"];
+
+/** Canonical display timezone — matches SHEET_TZ on the server so what you
+ *  see here is exactly what the cron will fire on, regardless of where the
+ *  viewer's browser thinks it is. */
+const DISPLAY_TZ = "America/Vancouver";
+
+function formatInDisplayTz(value?: string): string {
+  if (!value) return "";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return value;
+  return d.toLocaleString("en-US", {
+    timeZone: DISPLAY_TZ,
+    year: "numeric", month: "short", day: "numeric",
+    hour: "numeric", minute: "2-digit",
+    timeZoneName: "short",
+  });
+}
+
+const PLATFORM_ICONS: Record<string, React.ReactNode> = {
+  mastodon: <FaMastodon />,
+  linkedin: <FaLinkedinIn />,
+  facebook: <FaFacebookF />,
+  instagram: <FaInstagram />,
+};
 
 const PLATFORM_COLORS: Record<string, string> = {
   mastodon: "bg-purple-600/20 text-purple-400 border-purple-600",
@@ -43,6 +67,8 @@ export default function Home() {
   >({});
   const [formOpen, setFormOpen] = useState(false);
   const [editingPost, setEditingPost] = useState<Post | null>(null);
+  const [syncing, setSyncing] = useState<string | null>(null);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const router = useRouter();
 
   const fetchPosts = useCallback(async () => {
@@ -100,14 +126,25 @@ export default function Home() {
     await fetch(`/api/posts/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ posted: false }),
+      body: JSON.stringify({ reset: true }),
     });
-    setPosts((prev) => prev.map((p) => (p.id === id ? { ...p, posted: false } : p)));
+    fetchPosts();
   }
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login");
+  }
+
+  async function syncSheets(direction: "push" | "pull") {
+    setSyncing(direction);
+    setSyncMsg(null);
+    const res = await fetch(`/api/sync/google-sheets?direction=${direction}`, { method: "POST" });
+    const data = await res.json();
+    setSyncMsg(data.message || data.error || "Done");
+    setSyncing(null);
+    if (direction === "pull") fetchPosts();
+    setTimeout(() => setSyncMsg(null), 5000);
   }
 
   function openNewPost() {
@@ -153,45 +190,67 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-gray-950 p-6 max-w-5xl mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Social Media Automation</h1>
-          <div className="flex gap-2 mt-2">
-            {platforms.map((p) => (
-              <span
-                key={p.id}
-                className={`text-xs px-2 py-1 rounded-full ${
-                  p.connected
-                    ? "bg-green-900/50 text-green-400 border border-green-800"
-                    : "bg-gray-800 text-gray-500 border border-gray-700"
-                }`}
-              >
-                {p.name} {p.connected ? "Connected" : "Not connected"}
-              </span>
-            ))}
+      <div className="mb-8">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-4">
+            <h1 className="text-2xl font-bold text-white">Social Media Automation</h1>
+            <div className="flex gap-1.5">
+              {platforms.map((p) => (
+                <span
+                  key={p.id}
+                  title={`${p.name} ${p.connected ? "Connected" : "Not connected"}`}
+                  className={`text-base p-1.5 rounded-full ${
+                    p.connected
+                      ? "text-green-400"
+                      : "text-gray-600"
+                  }`}
+                >
+                  {PLATFORM_ICONS[p.id] || p.name[0]}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={openNewPost}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+            >
+              + Create Post
+            </button>
+            <button
+              onClick={() => syncSheets("pull")}
+              disabled={!!syncing}
+              title="Import posts from Google Sheets"
+              className="px-4 py-2 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 text-gray-300 rounded-lg text-sm font-medium transition-colors border border-gray-700"
+            >
+              {syncing === "pull" ? "Importing..." : "↓ Sheets"}
+            </button>
+            <Link
+              href="/settings"
+              className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm font-medium transition-colors border border-gray-700 flex items-center"
+            >
+              Settings
+            </Link>
+            <button
+              onClick={logout}
+              className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm font-medium transition-colors border border-gray-700"
+            >
+              Logout
+            </button>
           </div>
         </div>
-        <div className="flex gap-3">
-          <button
-            onClick={openNewPost}
-            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
-          >
-            + Create Post
-          </button>
-          <Link
-            href="/settings"
-            className="px-4 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm transition-colors"
-          >
-            Settings
-          </Link>
-          <button
-            onClick={logout}
-            className="px-4 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-sm transition-colors"
-          >
-            Logout
-          </button>
-        </div>
       </div>
+
+      {/* Sync message */}
+      {syncMsg && (
+        <div className={`mb-4 p-3 rounded-lg text-sm border ${
+          syncMsg.toLowerCase().includes("error") || syncMsg.toLowerCase().includes("not set")
+            ? "bg-red-900/50 border-red-800 text-red-400"
+            : "bg-green-900/50 border-green-800 text-green-400"
+        }`}>
+          {syncMsg}
+        </div>
+      )}
 
       {/* Pending Posts */}
       {pendingPosts.length === 0 && postedPosts.length === 0 && (
@@ -330,20 +389,17 @@ function PostCard({
                 {plat}
               </span>
             ))}
-            {post.video && (
-              <span className="text-xs text-gray-500 ml-2">Has video</span>
-            )}
-            {post.image && !post.video && (
-              <span className="text-xs text-gray-500 ml-2">Has image</span>
+            {post.media && (
+              <span className="text-xs text-gray-500 ml-2">Has media</span>
             )}
             {post.scheduledAt && (
               <span className="text-xs text-gray-500 ml-2">
-                Scheduled: {new Date(post.scheduledAt).toLocaleString()}
+                Scheduled: {formatInDisplayTz(post.scheduledAt)}
               </span>
             )}
             {post.postedAt && (
               <span className="text-xs text-gray-500 ml-2">
-                Posted: {new Date(post.postedAt).toLocaleString()}
+                Posted: {formatInDisplayTz(post.postedAt)}
               </span>
             )}
           </div>
@@ -357,13 +413,14 @@ function PostCard({
           >
             Edit
           </button>
-          {!post.posted && post.ready && (
+          {!post.posted && (
             <button
               onClick={onPublish}
               disabled={publishing}
+              title="Bypass schedule and post immediately"
               className="px-3 py-1.5 bg-green-700 hover:bg-green-600 disabled:bg-green-900 text-white rounded-lg text-xs font-medium transition-colors"
             >
-              {publishing ? "Posting..." : "Publish"}
+              {publishing ? "Posting..." : "Publish Now"}
             </button>
           )}
           {post.posted && (
@@ -385,14 +442,17 @@ function PostCard({
 
       {/* Publish results */}
       {publishResult && (
-        <div className="mt-3 pt-3 border-t border-gray-800 flex flex-wrap gap-3">
+        <div className="mt-3 pt-3 border-t border-gray-800 space-y-1">
           {Object.entries(publishResult).map(([plat, res]) => (
-            <span
+            <div
               key={plat}
-              className={`text-xs ${res.success ? "text-green-400" : "text-red-400"}`}
+              className={`text-xs break-all whitespace-pre-wrap ${
+                res.success ? "text-green-400" : "text-red-400"
+              }`}
             >
-              {plat}: {res.success ? "Done" : res.error?.slice(0, 80)}
-            </span>
+              <span className="font-medium">{plat}:</span>{" "}
+              {res.success ? "Done" : res.error || "(no error message returned)"}
+            </div>
           ))}
         </div>
       )}
@@ -401,6 +461,51 @@ function PostCard({
 }
 
 /* ─── Post Form Modal ─── */
+/** Convert any stored scheduled-at value to the `YYYY-MM-DDTHH:mm` format
+ *  required by <input type="datetime-local">, expressed in DISPLAY_TZ
+ *  (Vancouver) — NOT the viewer's browser timezone. This keeps the form,
+ *  the card display, and the cron all anchored to the same TZ. */
+function toLocalDatetimeInput(value?: string): string {
+  if (!value) return "";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return value;
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: DISPLAY_TZ,
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit",
+      hour12: false,
+    }).formatToParts(d).map((p) => [p.type, p.value])
+  );
+  const hh = String(Number(parts.hour) % 24).padStart(2, "0");
+  return `${parts.year}-${parts.month}-${parts.day}T${hh}:${parts.minute}`;
+}
+
+/** Convert a `YYYY-MM-DDTHH:mm` (interpreted as Vancouver wall-clock) to an
+ *  unambiguous ISO UTC string. Uses the same offset-resolution trick as the
+ *  server-side helper. */
+function localDatetimeInputToISO(value: string): string {
+  if (!value) return "";
+  const m = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (!m) return value;
+  const [year, month, day, hour, minute, second] =
+    [+m[1], +m[2], +m[3], +m[4], +m[5], m[6] ? +m[6] : 0];
+  const guess = Date.UTC(year, month - 1, day, hour, minute, second);
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: DISPLAY_TZ,
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      hour12: false,
+    }).formatToParts(new Date(guess)).map((p) => [p.type, p.value])
+  );
+  const asLocal = Date.UTC(
+    Number(parts.year), Number(parts.month) - 1, Number(parts.day),
+    Number(parts.hour) % 24, Number(parts.minute), Number(parts.second)
+  );
+  return new Date(guess - (asLocal - guess)).toISOString();
+}
+
 function PostFormModal({
   post,
   onSave,
@@ -412,13 +517,13 @@ function PostFormModal({
 }) {
   const [title, setTitle] = useState(post?.title || "");
   const [content, setContent] = useState(post?.content || "");
-  const [image, setImage] = useState(post?.image || "");
-  const [video, setVideo] = useState(post?.video || "");
-  const [scheduledAt, setScheduledAt] = useState(post?.scheduledAt || "");
+  const [media, setMedia] = useState(post?.media || "");
+  const [scheduledAt, setScheduledAt] = useState(toLocalDatetimeInput(post?.scheduledAt));
   const [ready, setReady] = useState(post?.ready ?? false);
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(
     post?.platforms || []
   );
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
   const editorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -437,13 +542,29 @@ function PostFormModal({
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    setScheduleError(null);
     const editorContent = editorRef.current?.innerText || content;
+    const scheduledISO = localDatetimeInputToISO(scheduledAt);
+
+    // Marking Ready with a past/empty schedule causes the cron to fire on its
+    // next tick (~1 min) — that's why "flipping YES posted immediately" felt
+    // like a bug. Force a future time, or send users to Publish Now.
+    if (ready) {
+      if (!scheduledISO) {
+        setScheduleError("Pick a future schedule time to mark Ready, or use 'Publish Now' for immediate posting.");
+        return;
+      }
+      if (new Date(scheduledISO).getTime() <= Date.now()) {
+        setScheduleError("Schedule time is in the past. Pick a future time, or save without Ready and click 'Publish Now' for immediate posting.");
+        return;
+      }
+    }
+
     onSave({
       title,
       content: editorContent,
-      image,
-      video,
-      scheduledAt,
+      media,
+      scheduledAt: scheduledISO,
       ready,
       platforms: selectedPlatforms,
     });
@@ -574,47 +695,20 @@ function PostFormModal({
             </p>
           </div>
 
-          {/* Image URL */}
+          {/* Media */}
           <div>
             <label className="block text-sm font-medium text-gray-400 mb-1.5">
-              Image URL
+              Media
             </label>
             <input
               type="text"
-              value={image}
-              onChange={(e) => setImage(e.target.value)}
-              placeholder="https://example.com/image.jpg"
-              className="w-full bg-gray-800 text-white text-sm px-4 py-2.5 rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none"
-            />
-            {image && (
-              <div className="mt-2 rounded-lg overflow-hidden border border-gray-700 max-h-40">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={image}
-                  alt="Preview"
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = "none";
-                  }}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Video URL */}
-          <div>
-            <label className="block text-sm font-medium text-gray-400 mb-1.5">
-              Video URL
-            </label>
-            <input
-              type="text"
-              value={video}
-              onChange={(e) => setVideo(e.target.value)}
-              placeholder="https://example.com/video.mp4"
+              value={media}
+              onChange={(e) => setMedia(e.target.value)}
+              placeholder="https://drive.google.com/drive/folders/... or direct image/video URL"
               className="w-full bg-gray-800 text-white text-sm px-4 py-2.5 rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none"
             />
             <p className="text-xs text-gray-600 mt-1">
-              Direct link to .mp4 file. If provided, video takes priority over image on platforms that don&apos;t support both.
+              Paste a Google Drive folder link (images + video auto-detected) or a direct image/video URL.
             </p>
           </div>
 
@@ -653,7 +747,8 @@ function PostFormModal({
           <div className="flex gap-4 items-end">
             <div className="flex-1">
               <label className="block text-sm font-medium text-gray-400 mb-1.5">
-                Schedule (optional)
+                Schedule {ready ? "(required)" : "(optional)"}{" "}
+                <span className="text-xs text-gray-500 font-normal">— Vancouver time (America/Vancouver)</span>
               </label>
               <input
                 type="datetime-local"
@@ -672,6 +767,11 @@ function PostFormModal({
               <span className="text-sm text-gray-400">Ready to publish</span>
             </label>
           </div>
+          {scheduleError && (
+            <div className="text-xs text-red-400 bg-red-950/40 border border-red-900/50 rounded-lg px-3 py-2">
+              {scheduleError}
+            </div>
+          )}
 
           {/* Submit */}
           <div className="flex gap-3 pt-2">

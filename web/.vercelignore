@@ -1,0 +1,11 @@
+# Local-only mock storage — never ship credentials/post data to Vercel
+data/
+
+# Local Next.js build artifacts
+.next/
+node_modules/
+
+# Local env (env vars are configured in the Vercel dashboard)
+.env
+.env.local
+.env.development.local
