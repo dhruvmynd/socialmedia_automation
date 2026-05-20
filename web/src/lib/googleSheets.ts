@@ -13,6 +13,15 @@ const POSTED_HEADERS = [
 
 const POSTED_TAB = "Posted";
 
+/** Accept a Ready cell whether it came back as a boolean (checkbox with
+ *  UNFORMATTED_VALUE), a TRUE/FALSE string (formatted), or legacy YES/NO
+ *  text. */
+function parseReady(v: unknown): boolean {
+  if (typeof v === "boolean") return v;
+  const s = String(v ?? "").trim().toUpperCase();
+  return s === "TRUE" || s === "YES";
+}
+
 export function getSheetClient() {
   const credentialsJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
   const sheetId = process.env.GOOGLE_SHEET_ID;
@@ -173,6 +182,24 @@ function wallClockInTzToISO(
   return new Date(guess - offset).toISOString();
 }
 
+/** Render an absolute ISO instant as a Vancouver wall-clock string
+ *  ("YYYY-MM-DD HH:mm:ss"). Used for human-friendly Posted-tab columns. */
+function formatInSheetTz(iso: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: SHEET_TZ,
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      hour12: false,
+    }).formatToParts(d).map((p) => [p.type, p.value])
+  );
+  const hh = String(Number(parts.hour) % 24).padStart(2, "0");
+  return `${parts.year}-${parts.month}-${parts.day} ${hh}:${parts.minute}:${parts.second}`;
+}
+
 /** Coerce whatever the Sheets API returns into a normalized ISO string.
  *  Handles:
  *   - an ISO string with a "T" (and typically a Z) we wrote ourselves → pass through
@@ -256,7 +283,7 @@ export async function pullPostsFromSheet() {
               .filter(Boolean)
           : [],
         scheduledAt,
-        ready: String(row[5] ?? "").toUpperCase() === "YES",
+        ready: parseReady(row[5]),
         error: row[6] ? String(row[6]) : undefined,
       };
     });
@@ -276,7 +303,7 @@ export async function pushPostsToSheet(posts: {
     p.content || "",
     p.media || "",
     p.scheduledAt || "",
-    p.ready ? "YES" : "NO",
+    p.ready ? true : false,
     p.error || "",
   ]);
 
@@ -335,8 +362,8 @@ export async function updateRowInPendingSheet(
     updates.media ?? String(row[3] ?? ""),
     updates.scheduledAt ?? existingScheduledAt,
     updates.ready !== undefined
-      ? (updates.ready ? "YES" : "NO")
-      : String(row[5] ?? "NO"),
+      ? !!updates.ready
+      : parseReady(row[5]),
     updates.error ?? String(row[6] ?? ""),
   ];
 
@@ -368,8 +395,8 @@ export async function addToPostedSheet(post: {
         post.content,
         post.media || "",
         (post.platforms || []).join(", "),
-        post.scheduledAt || "",
-        post.postedAt,
+        formatInSheetTz(post.scheduledAt || ""),
+        formatInSheetTz(post.postedAt),
         post.error || "",
       ]],
     },
