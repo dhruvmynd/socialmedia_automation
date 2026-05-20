@@ -3,7 +3,7 @@ import { google } from "googleapis";
 const SCOPES = ["https://www.googleapis.com/auth/spreadsheets"];
 
 const PENDING_HEADERS = [
-  "Title", "Content", "Media", "Platforms", "Scheduled At", "Ready", "Error"
+  "Platform", "Title (internal)", "Content", "Media", "Scheduled At", "Ready", "Error"
 ];
 
 const POSTED_HEADERS = [
@@ -88,7 +88,7 @@ async function ensurePendingHeaders() {
     range: `'${sheetName}'!A1:G1`,
   });
   const existingHeaders = res.data.values?.[0] || [];
-  if (existingHeaders.length === 0 || existingHeaders[0] !== "Title") {
+  if (existingHeaders.length === 0 || existingHeaders[0] !== PENDING_HEADERS[0]) {
     await sheets.spreadsheets.values.update({
       spreadsheetId: sheetId,
       range: `'${sheetName}'!A1`,
@@ -106,7 +106,14 @@ async function ensurePendingHeaders() {
 async function ensurePostedHeaders() {
   const { sheets, sheetId } = getSheetClient();
   const meta = await sheets.spreadsheets.get({ spreadsheetId: sheetId, fields: "sheets.properties" });
-  const postedSheet = meta.data.sheets?.find((s) => s.properties?.title === POSTED_TAB);
+  let postedSheet = meta.data.sheets?.find((s) => s.properties?.title === POSTED_TAB);
+  if (!postedSheet) {
+    const created = await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: sheetId,
+      requestBody: { requests: [{ addSheet: { properties: { title: POSTED_TAB } } }] },
+    });
+    postedSheet = { properties: created.data.replies?.[0]?.addSheet?.properties };
+  }
   const sheetGid = postedSheet?.properties?.sheetId;
 
   const res = await sheets.spreadsheets.values.get({
@@ -234,16 +241,16 @@ export async function pullPostsFromSheet() {
   const rows = res.data.values || [];
 
   return rows
-    .filter((row) => row[0]) // must have a title
+    .filter((row) => row[1]) // must have a title
     .map((row) => {
       const scheduledAt = coerceScheduledAt(row[4]);
       return {
-        id: stableId(String(row[0] ?? ""), String(row[1] ?? ""), scheduledAt),
-        title: String(row[0] ?? ""),
-        content: String(row[1] ?? ""),
-        media: String(row[2] ?? ""),
-        platforms: row[3]
-          ? String(row[3])
+        id: stableId(String(row[1] ?? ""), String(row[2] ?? ""), scheduledAt),
+        title: String(row[1] ?? ""),
+        content: String(row[2] ?? ""),
+        media: String(row[3] ?? ""),
+        platforms: row[0]
+          ? String(row[0])
               .split(",")
               .map((s: string) => s.trim().toLowerCase())
               .filter(Boolean)
@@ -264,10 +271,10 @@ export async function pushPostsToSheet(posts: {
   await ensurePendingHeaders();
 
   const rows = posts.map((p) => [
+    (p.platforms || []).join(", "),
     p.title || "",
     p.content || "",
     p.media || "",
-    (p.platforms || []).join(", "),
     p.scheduledAt || "",
     p.ready ? "YES" : "NO",
     p.error || "",
@@ -312,20 +319,20 @@ export async function updateRowInPendingSheet(
   const rows = res.data.values || [];
   const idx = rows.findIndex(
     (row) =>
-      row[0] &&
-      stableId(String(row[0] ?? ""), String(row[1] ?? ""), coerceScheduledAt(row[4])) === id
+      row[1] &&
+      stableId(String(row[1] ?? ""), String(row[2] ?? ""), coerceScheduledAt(row[4])) === id
   );
   if (idx === -1) return false;
 
   const row = rows[idx];
   const existingScheduledAt = coerceScheduledAt(row[4]);
   const newRow = [
-    updates.title ?? String(row[0] ?? ""),
-    updates.content ?? String(row[1] ?? ""),
-    updates.media ?? String(row[2] ?? ""),
     updates.platforms !== undefined
       ? updates.platforms.join(", ")
-      : String(row[3] ?? ""),
+      : String(row[0] ?? ""),
+    updates.title ?? String(row[1] ?? ""),
+    updates.content ?? String(row[2] ?? ""),
+    updates.media ?? String(row[3] ?? ""),
     updates.scheduledAt ?? existingScheduledAt,
     updates.ready !== undefined
       ? (updates.ready ? "YES" : "NO")
