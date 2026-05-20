@@ -69,6 +69,7 @@ export default function Home() {
   const [editingPost, setEditingPost] = useState<Post | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [postsError, setPostsError] = useState<string | null>(null);
   const router = useRouter();
 
   const fetchPosts = useCallback(async () => {
@@ -78,7 +79,13 @@ export default function Home() {
       return;
     }
     const data = await res.json();
-    setPosts(data);
+    if (Array.isArray(data)) {
+      setPosts(data);
+      setPostsError(null);
+    } else {
+      setPosts([]);
+      setPostsError(data?.error || `Failed to load posts (${res.status})`);
+    }
     setLoading(false);
   }, [router]);
 
@@ -241,6 +248,13 @@ export default function Home() {
         </div>
       </div>
 
+      {/* Posts error */}
+      {postsError && (
+        <div className="mb-4 p-3 rounded-lg text-sm border bg-red-900/50 border-red-800 text-red-400">
+          Failed to load posts: {postsError}
+        </div>
+      )}
+
       {/* Sync message */}
       {syncMsg && (
         <div className={`mb-4 p-3 rounded-lg text-sm border ${
@@ -290,7 +304,7 @@ export default function Home() {
       {postedPosts.length > 0 && (
         <div>
           <h2 className="text-lg font-semibold text-gray-300 mb-4">
-            Posted ({postedPosts.length})
+            Post History ({postedPosts.length})
           </h2>
           <div className="grid gap-4">
             {postedPosts.map((post) => (
