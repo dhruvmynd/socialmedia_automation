@@ -351,28 +351,48 @@ export async function updateRowInPendingSheet(
   );
   if (idx === -1) return false;
 
-  const row = rows[idx];
-  const existingScheduledAt = coerceScheduledAt(row[4]);
-  const newRow = [
-    updates.platforms !== undefined
-      ? updates.platforms.join(", ")
-      : String(row[0] ?? ""),
-    updates.title ?? String(row[1] ?? ""),
-    updates.content ?? String(row[2] ?? ""),
-    updates.media ?? String(row[3] ?? ""),
-    updates.scheduledAt ?? existingScheduledAt,
-    updates.ready !== undefined
-      ? !!updates.ready
-      : parseReady(row[5]),
-    updates.error ?? String(row[6] ?? ""),
-  ];
+  const sheetRow = idx + 2;
+  const colLetters = ["A", "B", "C", "D", "E", "F", "G"] as const;
+  // New layout: A=Platform, B=Title, C=Content, D=Media, E=Scheduled At, F=Ready, G=Error
+  const colMap: Record<string, number> = {
+    platforms: 0, title: 1, content: 2, media: 3, scheduledAt: 4, ready: 5, error: 6,
+  };
 
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: sheetId,
-    range: `'${sheetName}'!A${idx + 2}:G${idx + 2}`,
-    valueInputOption: "RAW",
-    requestBody: { values: [newRow] },
-  });
+  // Only touch the cells the caller explicitly named, so we never rewrite
+  // Scheduled At or Ready (with their nice sheet formatting / checkbox
+  // validation) when the cron is only trying to log an error.
+  const rawCells: { range: string; values: [[string]] }[] = [];
+  let readyCell: { range: string; values: [[string]] } | null = null;
+
+  for (const [key, raw] of Object.entries(updates)) {
+    if (raw === undefined || !(key in colMap)) continue;
+    const range = `'${sheetName}'!${colLetters[colMap[key]]}${sheetRow}`;
+    if (key === "ready") {
+      // USER_ENTERED + "TRUE"/"FALSE" so the cell stays a checkbox.
+      readyCell = { range, values: [[raw ? "TRUE" : "FALSE"]] };
+    } else if (key === "platforms") {
+      rawCells.push({ range, values: [[(raw as string[] | undefined ?? []).join(", ")]] });
+    } else {
+      rawCells.push({ range, values: [[String(raw ?? "")]] });
+    }
+  }
+
+  const calls: Promise<unknown>[] = [];
+  if (rawCells.length > 0) {
+    calls.push(sheets.spreadsheets.values.batchUpdate({
+      spreadsheetId: sheetId,
+      requestBody: { valueInputOption: "RAW", data: rawCells },
+    }));
+  }
+  if (readyCell) {
+    calls.push(sheets.spreadsheets.values.update({
+      spreadsheetId: sheetId,
+      range: readyCell.range,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: readyCell.values },
+    }));
+  }
+  await Promise.all(calls);
   return true;
 }
 
