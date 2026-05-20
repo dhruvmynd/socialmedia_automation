@@ -376,6 +376,47 @@ export async function updateRowInPendingSheet(
   return true;
 }
 
+/** Delete a single matched row from the pending sheet using
+ *  deleteDimension, so remaining rows shift up *with* their checkbox
+ *  data validation intact. (clear + rewrite leaves the validation rules
+ *  pinned to the original row numbers, which is what was clobbering the
+ *  Ready checkboxes after a publish.) */
+export async function deletePendingRow(id: string): Promise<boolean> {
+  const { sheets, sheetId } = getSheetClient();
+  const { title: sheetName, sheetId: sheetGid } = await getFirstSheet();
+  await ensurePendingHeaders();
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: sheetId,
+    range: `'${sheetName}'!A2:G`,
+    valueRenderOption: "UNFORMATTED_VALUE",
+  });
+  const rows = res.data.values || [];
+  const idx = rows.findIndex(
+    (row) =>
+      row[1] &&
+      stableId(String(row[1] ?? ""), String(row[2] ?? ""), coerceScheduledAt(row[4])) === id
+  );
+  if (idx === -1) return false;
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: sheetId,
+    requestBody: {
+      requests: [{
+        deleteDimension: {
+          range: {
+            sheetId: sheetGid,
+            dimension: "ROWS",
+            startIndex: idx + 1, // +1 to skip header row (0-based)
+            endIndex: idx + 2,
+          },
+        },
+      }],
+    },
+  });
+  return true;
+}
+
 export async function addToPostedSheet(post: {
   id: string; title: string; content: string; media: string;
   platforms: string[]; scheduledAt: string; postedAt: string; error?: string;

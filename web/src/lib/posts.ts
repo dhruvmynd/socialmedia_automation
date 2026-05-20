@@ -1,4 +1,4 @@
-import { pullPostsFromSheet, pushPostsToSheet, addToPostedSheet, loadPostedPosts, removeFromPostedSheet, stableId, updateRowInPendingSheet } from "@/lib/googleSheets";
+import { pullPostsFromSheet, pushPostsToSheet, addToPostedSheet, loadPostedPosts, removeFromPostedSheet, stableId, updateRowInPendingSheet, deletePendingRow } from "@/lib/googleSheets";
 
 export interface Post {
   id: string;
@@ -96,7 +96,9 @@ export async function moveToPosted(id: string, postedAt: string, error?: string)
     error,
   });
 
-  await pushPostsToSheet(rows.filter((r) => r.id !== id));
+  // Targeted row delete instead of full sheet rewrite — preserves the
+  // Ready-column checkbox data validation on the remaining rows.
+  await deletePendingRow(id);
   return true;
 }
 
